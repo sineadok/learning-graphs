@@ -1,0 +1,185 @@
+#first need to fix this so labels are in place
+luad_clean <- luad_clean %>%
+  mutate(
+    SmokingGroup = case_when(
+      tobacco_smoking_history == "Current smoker" ~ "Smoker",
+      tobacco_smoking_history == "Current reformed smoker for < or = 15 years" ~ "Smoker",
+      tobacco_smoking_history == "Current reformed smoker for > 15 years" ~ "Smoker",
+      tobacco_smoking_history == "Current Reformed Smoker, Duration Not Specified" ~ "Smoker",
+      tobacco_smoking_history == "Lifelong Non-smoker" ~ "Non-smoker",
+      TRUE ~ NA_character_
+    )
+  )
+
+install.packages("jtools")
+library(jtools)
+
+#step below checks how many are na (it is a quality check)
+table(luad_clean$tobacco_smoking_history, luad_clean$SmokingGroup, useNA = "ifany")
+
+View(luad_clean)
+
+#how to remove a column
+luad_clean$SmokingGroup3 <- NULL
+
+#how to check the column names
+colnames(luad_clean)
+
+
+#be SO careful with case sensitive stuff
+#NA_real_ is for numeric, NA_character_
+
+luad_clean <- luad_clean %>%
+  mutate(
+    SmokingBinary = case_when(
+      SmokingGroup == "Smoker" ~ 1,
+      SmokingGroup == "Non-smoker" ~ 0,
+      TRUE ~ NA_real_
+      )
+  )
+
+
+saveRDS(luad_clean, "luad_clean.rds")
+
+#overarching question being: what is the affect of HLA counts on EGFR amp in smokers and non-smokers?
+
+#need to see if stuff is numeric or not (outcome variable)
+# Check if EGFR_amp_ploidy2 is numeric, need this for the math in modeling
+class(luad_clean$EGFR_amp_ploidy2)
+head(luad_clean$EGFR_amp_ploidy2, 20) #give it a specific number to show that
+
+#lm is for continuous
+#glm is for binary regressions
+
+# Convert all the variables to numeric
+luad_clean$somatic <- as.numeric(luad_clean$somatic)
+luad_clean$age_at_initial_pathologic_diagnosis <- as.numeric(luad_clean$age_at_initial_pathologic_diagnosis)
+luad_clean$PC1 <- as.numeric(luad_clean$PC1)
+luad_clean$PC2 <- as.numeric(luad_clean$PC2)
+luad_clean$PC3 <- as.numeric(luad_clean$PC3)
+luad_clean$PC4 <- as.numeric(luad_clean$PC4)
+luad_clean$PC5 <- as.numeric(luad_clean$PC5)
+luad_clean$PC6 <- as.numeric(luad_clean$PC6)
+luad_clean$count_netmhcpanall0.5to3 <- as.numeric(luad_clean$count_netmhcpanall0.5to3)
+
+model <- glm(EGFR_amp_ploidy2 ~ count_netmhcpanall0.5to3 * SmokingBinary + 
+               PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + 
+               somatic + age_at_initial_pathologic_diagnosis, 
+             data = luad_clean,
+             family = binomial(link = "logit"))
+
+summary(model)
+
+library(interactions)
+
+
+interact_plot(model, #this is the model made earlier
+              pred = count_netmhcpanall0.5to3, #main predictor on x axis (continuous)
+              modx = SmokingBinary, #moderator, which creates separate lines
+              interval = TRUE, #show confidence interval bands pls
+              int.width = 0.95, #95 % sure true value falls within this range
+              main.title = "Effect of HLA Counts on EGFR Amplification by Smoking Status",
+              x.label = "HLA Count (netMHCpan 0.5-3)",
+              y.label = "Predicted Probability of EGFR Amplification",
+              legend.main = "Smoking Status")
+
+#general set up
+
+# Step 1: Create your interaction model
+model_name <- glm(OUTCOME ~ PREDICTOR * MODERATOR + COVARIATE1 + COVARIATE2,
+                  data = YOUR_DATA,
+                  family = binomial(link = "logit"))  # or just lm() for linear
+
+# Step 2: Check results
+summary(model_name)
+
+# Step 3: Plot the interaction
+interact_plot(model_name,
+              pred = PREDICTOR,
+              modx = MODERATOR,
+              interval = TRUE,
+              int.width = 0.95,
+              main.title = "YOUR TITLE HERE",
+              x.label = "X-AXIS LABEL",
+              y.label = "Y-AXIS LABEL",
+              legend.main = "LEGEND TITLE")
+
+
+#dividing by gender
+table(luad_clean$gender)
+
+# First create the female-only model
+model_female <- glm(EGFR_amp_ploidy2 ~ count_netmhcpanall0.5to3 * SmokingBinary + 
+                      PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + 
+                      somatic + age_at_initial_pathologic_diagnosis, 
+                    data = subset(luad_clean, gender == "FEMALE"), #takes a subset of the dataset, subset(dataset, condition)
+                    family = binomial(link = "logit")) #this makes it logistic regression, and makes outcome binary #logit =log(probability / (1 - probability))
+
+# Then plot it
+interact_plot(model_female,                              # NEW model for females only
+              pred = count_netmhcpanall0.5to3,           # Same x-axis variable
+              modx = SmokingBinary,                      # Same grouping variable
+              interval = TRUE,
+              int.width = 0.95,
+              main.title = "Females: HLA Counts and EGFR Amplification by Smoking",
+              x.label = "HLA Count (netMHCpan 0.5-3)",
+              y.label = "Predicted Probability of EGFR Amplification",
+              legend.main = "Smoking Status")
+
+#below iS what erika sent me
+
+###INTERACTION MODEL PLOTTING gene signatures#####################################################
+install.packages(c(
+  "lattice",          
+  "latticeExtra",    
+  "Rcpp",             
+  "RcppEigen",     
+  "interp"            
+))
+library(tidyr)
+library(dplyr)
+library(BoutrosLab.plotting.general)
+
+date <- Sys.Date()
+setwd(~/Documents/Houlahan_lab)
+# read in results
+plot_data <- read.delim('/workspace/lab/houlahanlab/apele/data/egfr_antigenpresentationsignatures_association_results_netmhcpanfullpeptide.csv')
+
+# Rename the messy column for clarity
+colnames(plot_data)[1] <- "raw"
+
+# Separate into real columns
+plot_data <- plot_data %>%
+  separate(raw, into = c("cancer", "signature", "cohort", "type", "coef", "p", "se", "l95", "u95", "n"), sep = ",") %>%
+  mutate(across(c(coef, p, se, l95, u95, n), as.numeric))
+plot_data <- plot_data %>%
+  filter(cancer == "LUAD", type == "count_netmhcpan_full") %>% ###this is selecting for female (the first result of the two)
+  arrange(signature) #filtering alphabetically by signature
+
+plot_data$index <- 1:nrow(plot_data) #this assi\gns a numeric index to each row so they can be plotted on y axis from 1 on 
+
+create.scatterplot(
+  index ~ coef,
+  data = plot_data,
+  horizontal = TRUE,
+  xlimits = c(-4, 4),
+  xat = log(c(0.15, 0.5, 1, 2.5, 8)),
+  xaxis.lab = c('0.15', '0.50', '1.00', '2.50', '8.00'),
+  filename = "2025-06-20_LUAD_egfrantigenpresentation_interaction_netmhcpanfullpeptide.tiff",
+  xlab.label = 'Odds Ratio',
+  ylab.label = 'Gene Signature',
+  ylimits = c(0.5, nrow(plot_data) + 0.5),
+  yat = 1:nrow(plot_data),
+  yaxis.lab = plot_data$signature,
+  abline.v = 0,
+  width = 12,#changed so x axis is less squished
+  height = 3,
+  top.padding = 2,
+  add.text = TRUE,
+  text.labels = paste0('n=', plot_data$n),
+  text.x = plot_data$coef,
+  text.y = plot_data$index + 0.3,
+  x.error.right = plot_data$u95 - plot_data$coef,
+  x.error.left = plot_data$coef - plot_data$l95,
+  resolution = 300
+)

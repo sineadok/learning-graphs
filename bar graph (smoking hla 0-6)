@@ -1,0 +1,75 @@
+# ---------------------------------------------------------
+# TEMPLATE: EGFR amplification by raw HLA count (0–6)
+# ---------------------------------------------------------
+
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# 1. Filter your subgroup
+# Replace these conditions depending on the graph you want
+subgroup <- lung_data_clean %>%
+  filter(
+    gender == "MALE",
+    SmokingGroup == "Smoker",
+    cancer == "LUSC",
+    !is.na(count_netmhcpanall0.5to3),
+    !is.na(EGFR_amp_ploidy2)
+  ) %>%
+  mutate(count_netmhcpanall0.5to3 = as.integer(count_netmhcpanall0.5to3))
+
+
+# 2. Summarise proportions for all HLA counts 0–6
+prop_df_full <- subgroup %>%
+  group_by(count_netmhcpanall0.5to3) %>%
+  summarise(
+    n_total = n(),
+    n_amp = sum(EGFR_amp_ploidy2 == 1),
+    prop = n_amp / n_total,
+    .groups = "drop"
+  ) %>%
+  complete(count_netmhcpanall0.5to3 = 0:6) %>%
+  replace_na(list(
+    n_total = 0,
+    n_amp = 0,
+    prop = 0
+  ))
+
+# 3. Plot
+ggplot(prop_df_full, aes(
+  x = factor(count_netmhcpanall0.5to3),
+  y = prop,
+  fill = factor(count_netmhcpanall0.5to3)
+)) +
+  geom_col() +
+  geom_text(
+    aes(label = paste0("n = ", n_total)),
+    vjust = -0.5,
+    size = 4
+  ) +
+  scale_fill_manual(values = c(
+    "0" = "#D0E1F9",
+    "1" = "#A7C7E7",
+    "2" = "#7BAFD4",
+    "3" = "#A7C7E7",
+    "4" = "#A6CEE3",   # light blue
+    "5"  = "#1F78B4",   # muted blue
+    "6"  = "#B2DF8A"    # clinical green
+  )) +
+    
+  scale_y_continuous(limits = c(0, 1)) +
+  theme_minimal() +
+  labs(
+    title = "EGFR Amplification in Male Smokers with LUSC (V1)",
+    x = "EGFR-binding HLA count group",
+    y = "Proportion amplified",
+    fill = "HLA Count"
+  ) 
+
+#scale-y_continouous(limit)- pmakes the scale
+
+#the other colours:   
+#"4" = "#328CC1",
+#"5" = "#0B6E4F",
+# "6" = "#074F37"
+# )) +

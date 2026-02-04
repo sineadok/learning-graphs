@@ -1,0 +1,240 @@
+############################################################
+#if you needed to remove the V row so I can access the column names below for simplicity this is what I ran:
+# 1. Save the first row as column names
+new_names <- as.character(megatable_netmhcpanall0.5to3_withsmoking[1, ])
+
+# 2. Assign them as column names
+colnames(megatable_netmhcpanall0.5to3_withsmoking) <- new_names
+
+# 3. Remove the first row from the data
+megatable_netmhcpanall0.5to3_withsmoking <- megatable_netmhcpanall0.5to3_withsmoking[-1, ]
+
+#dataframe is stored in r do not use quoutations
+#file name is on your computer (use quotations)
+
+# Analysis: EGFR amplification by grouped HLA-binding count
+# Population: Female smokers with LUAD
+#
+# This script:
+# 1. Creates a simplified smoking variable
+# 2. Filters to the target clinical subgroup
+# 3. Groups HLA-binding allele counts into 3 bins (≤4, 5, 6)
+# 4. Calculates EGFR amplification proportions
+# 5. Produces a clinical-style bar plot with custom colours
+############################################################
+
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+
+View("megatable_netmhcpanall0.5to3_withsmoking.tsv")
+lung_data_clean <- read.delim("mega_")
+
+lung_data_clean <- readRDS("lung_data_clean.rds")
+#load back this cause I saved this variable
+#this is how i saved it: saveRDS(lung_data_clean, "lung_data_clean.rds")
+
+#shift/return on a map to go to next line without entering it
+# ---------------------------------------------------------
+# 1. Create simplified smoking groups
+#
+# case_when() assigns a value depending on conditions.
+# It works like a clean, readable version of nested IF
+# statements. Here, we collapse detailed smoking categories
+# into two clinically meaningful groups: "Smoker" and
+# "Non-smoker".
+# ---------------------------------------------------------
+
+unique(megatable_netmhcpanall0.5to3_withsmoking$tobacco_smoking_history)
+#above shows every distinct label under the column
+
+#R is case sensitive so be very careful!!
+#true ~ na_character_ is saying if not fitting these parameters assign it as NA
+
+luad_clean <- luad_clean %>%
+  mutate(
+    SmokingGroup = case_when(
+      tobacco_smoking_history == "Current smoker" ~ "Smoker",
+      tobacco_smoking_history == "Current reformed smoker for < or = 15 years" ~ "Smoker",
+      tobacco_smoking_history == "Current reformed smoker for > 15 years" ~ "Smoker",
+      tobacco_smoking_history == "Current Reformed Smoker, Duration Not Specified" ~ "Smoker",
+      tobacco_smoking_history == "Lifelong Non-smoker" ~ "Non-smoker",
+      TRUE ~ NA_character_
+    )
+  )
+
+
+lung_data_clean <- lung_data_clean %>%
+  filter(
+    !tobacco_smoking_history %in% c("[Discrepancy]", "[Not Available]", "[Unknown]"),
+    !is.na(tobacco_smoking_history)
+  )saveRDS(lung_data_clean, "lung_data_clean.rds")
+
+#rds stand for save as an r object
+
+#%in% is saying does this value belong in this list
+#for instance x %in% c("apple", "banana", "pear") will return TRUE if x is any of them
+#!is.na removes rows where missing values in that are not there, so it keeps only rows where smoking history is not missing
+#! switches true/false so its saying keep only rows where smoking history is not the follow things (unknown etc)
+
+# ---------------------------------------------------------
+# 2. Filter to female smokers with LUAD
+#
+# IMPORTANT: gender values in the dataset are uppercase
+# ("FEMALE", "MALE"), so we must match that exactly.
+#
+# We also remove rows with missing HLA counts or EGFR
+# amplification status, because they cannot contribute to
+# the analysis.
+# ---------------------------------------------------------
+
+male_smokers_lusc <- lung_data_clean %>%
+  filter(
+    gender == "MALE",
+    SmokingGroup == "Smoker",
+    cancer == "LUSC",
+    !is.na(count_netmhcpanall0.5to3),
+    !is.na(EGFR_amp_ploidy2)
+  )
+#on e= is form assigning
+#two (==) is for equality
+
+# ---------------------------------------------------------
+# 3. Collapse HLA-binding allele counts into 3 groups:
+#    - ≤4 alleles
+#    - 5 alleles
+#    - 6 alleles
+#
+# case_when() checks each condition and assigns the label.
+# factor() ensures the x-axis appears in the correct order.
+# ---------------------------------------------------------
+
+#mutate is making new columns
+#case_when is saying (if x is this)
+#factor orders them bc otherwise is alphabetical
+
+male_smokers_lusc <- male_smokers_lusc %>%
+  mutate(
+    HLA_group = case_when(
+      count_netmhcpanall0.5to3 <= 4 ~ "≤4",
+      count_netmhcpanall0.5to3 == 5 ~ "5",
+      count_netmhcpanall0.5to3 == 6 ~ "6"
+    ),
+    HLA_group = factor(HLA_group, levels = c("≤4", "5", "6"))
+  )
+
+# ---------------------------------------------------------
+# 4. Calculate EGFR amplification proportions by HLA group
+#
+# n_total = number of patients in each HLA group
+# n_amp   = number with EGFR amplification
+# prop    = proportion amplified
+#
+# This produces a tidy summary table ready for plotting.
+# ---------------------------------------------------------
+#grpup by splits by HLA group
+
+#change variable!!
+prop_df <- male_smokers_lusc %>%
+  group_by(HLA_group) %>%
+  summarise(
+    n_total = n(),
+    n_amp = sum(EGFR_amp_ploidy2 == 1),
+    prop = n_amp / n_total
+  )
+
+#n_total counts how many ppl are in each group
+#prop_df will be overruled by what you put to the right of it
+
+# ---------------------------------------------------------
+# 5. Plot the grouped HLA categories on the x-axis
+#
+# - Bars show EGFR amplification proportion
+# - n-values printed above each bar
+# - Custom colour palette:
+#       ≤4 = light blue
+#       5  = muted blue
+#       6  = clinical green
+# - y-axis fixed from 0 to 1 (proportion scale)
+# - theme_minimal() for clean, publication-ready style
+# ---------------------------------------------------------
+
+#use prop_df as the 
+#standard graph follows: 
+#ggplot(
+#  data = your_dataset,
+#  aes(
+#    x = something,
+#    y = something_else,
+#    fill = maybe_a_group
+#  )
+# ) +
+#  geom_something()
+
+#geo_col makes the bar graph equal to prop values
+# label is outting hte n values (above -0.5 so not hidden)
+#manually change the variable colours with scale_fill_manual
+#scale_y_continuous states what you want the y axis to look like
+#minimal theme and labels
+
+ggplot(prop_df, aes(
+  x = HLA_group,
+  y = prop,
+  fill = HLA_group
+)) +
+  geom_col() +
+  geom_text(
+    aes(label = paste0("n = ", n_total)),
+    vjust = -0.5,
+    size = 4
+  ) +
+  scale_fill_manual(values = c(
+    "≤4" = "#A6CEE3",   # light blue
+    "5"  = "#1F78B4",   # muted blue
+    "6"  = "#B2DF8A"    # clinical green
+  )) +
+  scale_y_continuous(limits = c(0, 1)) +
+  theme_minimal() +
+  labs(
+    title = "EGFR Amplification in Male Smokers with LUSC (V1)",
+    x = "EGFR-binding HLA count group",
+    y = "Proportion amplified",
+    fill = "HLA Group"
+  )
+
+#if need the OG colours (not erika's) "≤4" = "#A7C7E7",   # light blue
+#"5"  = "#328CC1",   # muted blue
+# "6"  = "#0B6E4F"    # clinical green
+
+#if want to do 0-6 lets try this:
+
+ggplot(prop_df_full, aes(
+  x = count_netmhcpanall0.5to3,
+  y = prop,
+  fill = factor(count_netmhcpanall0.5to3)
+)) +
+  geom_col() +
+  geom_text(
+    aes(label = paste0("n = ", n_total)),
+    vjust = -0.5,
+    size = 4
+  ) +
+  scale_x_continuous(limits = c(0, 6), breaks = 0:6) +
+  scale_fill_manual(values = c(
+    "0" = "#D0E1F9", #these are the differenet colours
+    "1" = "#A7C7E7",
+    "2" = "#7BAFD4",
+    "3" = "#4F97C1",
+    "4" = "#328CC1",
+    "5" = "#0B6E4F",
+    "6" = "#074F37"
+  )) +
+  scale_y_continuous(limits = c(0, 1)) +
+  theme_minimal() +
+  labs(
+    title = "EGFR Amplification by HLA Count (0–6)",
+    x = "HLA-binding allele count (0–6)",
+    y = "Proportion amplified",
+    fill = "HLA Count"
+  )
+

@@ -1,0 +1,135 @@
+library(tidyverse)
+library(ggplot2)
+library(tidyr)
+
+getwd()
+setwd("~/Documents/Houlahan_Lab")
+list.files()
+readRDS("lung_data_v2")
+#this simply reads it doens't load it^
+
+luad_clean <- readRDS("luad_clean.rds")
+
+lung_data_v2 <- lung_data_v2 %>%
+  mutate(
+    SmokingGroup3 = case_when(
+      tobacco_smoking_history == "Current smoker" ~ "Smoker",
+      tobacco_smoking_history == "Current reformed smoker for < or = 15 years" ~ "Non-Smoker",
+      tobacco_smoking_history == "Current reformed smoker for > 15 years" ~ "Non-Smoker",
+      tobacco_smoking_history == "Current Reformed Smoker, Duration Not Specified" ~ "Non-Smoker",
+      tobacco_smoking_history == "Lifelong Non-smoker" ~ "Non-Smoker",
+      TRUE ~ NA_character_
+    )
+  )
+
+df <- lung_data_v2
+
+#maybe don't need? if doing it by function test_egfr_smoking <- function(cancer_type, gender_group, smoking_group, amp_threshold, df) {
+
+#keep only rows we want     
+#can alter depending on what we are looking at
+sub <- df %>%
+  filter(
+    cancer == "LUAD",
+    SmokingGroup3 == "Reformed",
+  )
+#removed the somatic < 350, to try and help with the number issue?
+
+df %>%
+  filter(cancer == "LUAD", SmokingGroup3 == "Reformed") %>%
+  group_by(gender) %>%
+  summarise(
+    total = n(),
+    egfr1 = sum(EGFR_amp_ploidy2 == 1, na.rm = TRUE),
+    egfr0 = sum(EGFR_amp_ploidy2 == 0, na.rm = TRUE)
+  )
+
+#need it to not be a string anymore- numerical
+sub$somatic <- as.numeric(sub$somatic)
+str(sub$somatic)
+pc_cols <- paste0("PC", 1:6)
+sub[pc_cols] <- lapply(sub[pc_cols], function(x) as.numeric(as.character(x)))
+str(sub$PC1)
+sub$age_at_initial_pathologic_diagnosis <- as.numeric(sub$age_at_initial_pathologic_diagnosis)
+sub$hla <- as.numeric(sub$count_netmhcpanall0.5to3)
+
+sub$subtype <- (sub$EGFR_amp_ploidy2 == 1)*1
+#TRUE if value equals 1 and then multiples by 1, if not and false multiples by 1 = 0
+
+fit <- glm(
+  subtype ~ hla + somatic + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + age_at_initial_pathologic_diagnosis,
+  data = sub,
+  family = binomial
+)
+
+summary(fit)
+
+sub %>% count(subtype)
+
+
+#if controlling for somatic < 350 below
+sub <- df %>%
+  filter(
+    cancer == "LUAD",
+    gender == "FEMALE",
+    SmokingGroup3 == "Non-Smoker",
+    somatic < 350
+  )
+
+#makes a new variable (like mutate but in base R)
+
+
+
+
+
+  
+#ifelse( CONDITION , value_if_TRUE , value_if_FALSE )
+#so it it saying if equal to 1, make it 1 and if not make it 0
+#we need a binary outcome for logistic regression
+#string is text ie "1", even tho alr binary step below confirms it for the model
+  
+amp_threshold <- "EGFR_amp_ploidy2"
+sub$subtype <- ifelse(sub[[amp_threshold]] == 1, 1, 0)
+  
+  
+fit <- glm(
+  subtype ~ somatic + PC1 + age_at_initial_pathologic_diagnosis,
+  data = sub,
+  family = binomial
+)
+
+#+ PC2 + PC3 + PC4 + PC5 + PC6 + age_at_initial_pathologic_diagnosis
+summary(fit)
+
+
+#left is outcome, right are predictors for the model (on second line)
+#glm stands for generalized linear model
+#family = gaussian → linear regression
+# family = poisson → count model
+#  family = binomial → logistic regression
+
+summary(fit)
+head(fit)
+  
+  ci <- confint(fit)
+  
+  data.frame(
+    cancer = cancer_type,
+    gender = gender_group,
+    smoking = smoking_group,
+    coef = coef(fit)[["somatic"]],
+    p = summary(fit)$coefficients["somatic", 4],
+    se = summary(fit)$coefficients["somatic", 2],
+    l95 = ci["somatic", 1],
+    u95 = ci["somatic", 2],
+    n = nrow(sub)
+  )
+}
+results <- rbind(
+  test_egfr_smoking("LUAD", "FEMALE", "Smoker",     "EGFR_amp_ploidy2", lung_data_v2),
+  test_egfr_smoking("LUAD", "MALE",   "Smoker",     "EGFR_amp_ploidy2", lung_data_v2),
+  test_egfr_smoking("LUAD", "FEMALE", "Reformed",   "EGFR_amp_ploidy2", lung_data_v2),
+  test_egfr_smoking("LUAD", "MALE",   "Reformed",   "EGFR_amp_ploidy2", lung_data_v2),
+  test_egfr_smoking("LUAD", "FEMALE", "Non-Smoker", "EGFR_amp_ploidy2", lung_data_v2),
+  test_egfr_smoking("LUAD", "MALE",   "Non-Smoker", "EGFR_amp_ploidy2", lung_data_v2)
+)

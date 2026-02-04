@@ -1,0 +1,23 @@
+#What is the effect of HLA counts on EGFR amplification in smokers and non-smokers?"
+
+# Extract HLA coefficient for females
+female_coef <- tidy(model_female, conf.int = TRUE) %>%
+  filter(term == "count_netmhcpanall0.5to3") %>%  # Get only HLA coefficient
+  mutate(group = "Female")  # Label it as Female
+
+# Same for males
+male_coef <- tidy(model_male, conf.int = TRUE) %>%
+  filter(term == "count_netmhcpanall0.5to3") %>%
+  mutate(group = "Male")
+
+# Combine both into one dataset
+forest_data <- rbind(female_coef, male_coef)
+
+# Plot it
+ggplot(forest_data, aes(x = estimate, y = group)) +  # x = coefficient, y = sex
+  geom_point(size = 4) +  # The dots
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2) +  # The lines (CI)
+  geom_vline(xintercept = 0, linetype = "dashed") +  # Reference line at 0
+  labs(title = "Effect of HLA Counts on EGFR Amplification by Sex",
+       x = "Coefficient (95% CI)",
+       y = "")
